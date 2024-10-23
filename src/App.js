@@ -2,21 +2,28 @@
 import React from 'react';
 import { ClerkProvider, SignedIn, SignedOut } from "@clerk/clerk-react";
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import AuthPages, { appearance } from './components/AuthPages';
-import Dashboard from './components/Dashboard';
-import BudgetCategories from './components/BudgetCategories';
-import DashboardLayout from './components/DashboardLayout';
-import './index.css';
+import DashboardPage from './pages/DashboardPage';
+import BudgetPage from './pages/BudgetPage';
+import AuthPages from './pages/AuthPages';
+import AppLayout from './components/layout';
 
 if (!process.env.REACT_APP_CLERK_PUBLISHABLE_KEY) {
   throw new Error("Missing Clerk Publishable Key");
 }
 
+const clerkAppearance = {
+  elements: {
+    formButtonPrimary: "bg-purple-500 hover:bg-purple-600",
+    formFieldInput: "rounded-lg",
+    card: "rounded-xl shadow-lg"
+  }
+};
+
 function App() {
   return (
     <ClerkProvider 
       publishableKey={process.env.REACT_APP_CLERK_PUBLISHABLE_KEY}
-      appearance={appearance}
+      appearance={clerkAppearance}
     >
       <BrowserRouter>
         <SignedOut>
@@ -29,11 +36,11 @@ function App() {
         
         <SignedIn>
           <Routes>
-            <Route element={<DashboardLayout />}>
+            <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/budget-categories" element={<BudgetCategories />} />
-              {/* Add other routes as needed */}
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/budget" element={<BudgetPage />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>
         </SignedIn>

@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { categories } from '../utils/categories';
+import { useAuth } from "@clerk/clerk-react";
+import axios from 'axios';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 function AddTransaction({ onTransactionAdded }) {
-  // Initialize form state with empty values
+  const { getToken } = useAuth();
+  
   const initialFormState = {
     description: '',
     amount: '',
@@ -14,37 +18,32 @@ function AddTransaction({ onTransactionAdded }) {
   };
 
   const [formData, setFormData] = useState(initialFormState);
-  // Separate state for formatted display of amount
   const [displayAmount, setDisplayAmount] = useState('');
+  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputStyles = "w-full p-3 border border-gray-300 rounded-lg";
 
-  // Format number with Icelandic thousands separators
   const formatAmount = (value) => {
-    const number = value.replace(/\D/g, ''); // Remove non-digits
+    const number = value.replace(/\D/g, '');
     if (!number) return '';
-    
-    // Add thousands separators
     const formatted = number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     return `${formatted} kr`;
   };
 
-  // Remove formatting to get raw number
   const unformatAmount = (value) => {
     return value.replace(/\D/g, '');
   };
 
-  // Handle changes for text and select inputs
   const handleChange = (e) => {
     const { name, value } = e.target;
+    setError(null);
     
     if (name === 'amount') {
-      // Store raw number in form data
       const rawValue = unformatAmount(value);
       setFormData(prevData => ({
         ...prevData,
         amount: rawValue
       }));
-      // Update display with formatting
       setDisplayAmount(formatAmount(rawValue));
     } else {
       setFormData(prevData => ({
@@ -54,108 +53,158 @@ function AddTransaction({ onTransactionAdded }) {
     }
   };
 
-  // Handle amount input specifically
-  const handleAmountChange = (e) => {
-    const value = e.target.value;
-    const rawValue = unformatAmount(value);
-    
-    // Only update if input is empty or a valid number
-    if (!rawValue || /^\d+$/.test(rawValue)) {
-      setFormData(prevData => ({
-        ...prevData,
-        amount: rawValue
-      }));
-      setDisplayAmount(formatAmount(rawValue));
-    }
-  };
-
-  // Handle date picker changes
   const handleDateChange = (date) => {
     setFormData(prevData => ({
       ...prevData,
       date
     }));
+    setError(null);
   };
 
-  // Submit the form data to the server
+  const validateForm = () => {
+    if (!formData.description.trim()) {
+      setError('Please enter a description');
+      return false;
+    }
+    if (!formData.amount) {
+      setError('Please enter an amount');
+      return false;
+    }
+    if (!formData.category) {
+      setError('Please select a category');
+      return false;
+    }
+    if (!formData.date) {
+      setError('Please select a date');
+      return false;
+    }
+    return true;
+  };
+
+  const resetForm = () => {
+    setFormData(initialFormState);
+    setDisplayAmount('');
+    setError(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+  
+    // Prevent double submission
+    if (isSubmitting) {
+      return;
+    }
+  
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+  
+    setError(null);
+    setIsSubmitting(true);
     
     try {
       const formattedData = {
-        ...formData,
-        date: formData.date.toISOString().split('T')[0],
+        description: formData.description,
+        amount: parseInt(formData.amount, 10),
+        category: formData.category,
+        date: formData.date.toISOString()
       };
-
-      const response = await axios.post(
-        'http://localhost:5000/transactions', 
-        formattedData
-      );
-
-      onTransactionAdded(response.data);
-      setFormData(initialFormState);
-      setDisplayAmount('');
+  
+      const token = await getToken();
+      await axios.post(`${API_BASE_URL}/transactions`, formattedData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+  
+      resetForm();
+      onTransactionAdded(true);
+      
     } catch (error) {
-      console.error('Error adding transaction:', error);
+      console.error('Error submitting transaction:', error);
+      let errorMessage = 'An error occurred while adding the transaction';
+      
+      if (error.response) {
+        if (error.response.status === 409) {
+          errorMessage = 'This appears to be a duplicate transaction. Please wait a moment before trying again.';
+        } else {
+          errorMessage = error.response.data?.message || 'Failed to add transaction';
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="bg-white p-6 rounded-3xl shadow-lg">
       <h2 className="text-2xl font-bold mb-4">Add Transaction</h2>
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Description input */}
-        <input
-          name="description"
-          type="text"
-          placeholder="Description"
-          value={formData.description}
-          onChange={handleChange}
-          required
-          className={inputStyles}
-        />
+        <div>
+          <input
+            name="description"
+            type="text"
+            placeholder="Description"
+            value={formData.description}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            className={inputStyles}
+          />
+        </div>
 
-        {/* Amount input */}
-        <input
-          name="amount"
-          type="text" // Changed to text to allow formatting
-          placeholder="Amount"
-          value={displayAmount}
-          onChange={handleAmountChange}
-          required
-          className={inputStyles}
-        />
+        <div>
+          <input
+            name="amount"
+            type="text"
+            placeholder="Amount"
+            value={displayAmount}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            className={inputStyles}
+          />
+        </div>
 
-        {/* Category selector */}
-        <select
-          name="category"
-          value={formData.category}
-          onChange={handleChange}
-          required
-          className={`${inputStyles} appearance-none`}
-        >
-          <option value="">Select a category</option>
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
+        <div>
+          <select
+            name="category"
+            value={formData.category}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            className={`${inputStyles} appearance-none`}
+          >
+            <option value="">Select a category</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {/* Date picker */}
-        <DatePicker
-          selected={formData.date}
-          onChange={handleDateChange}
-          dateFormat="dd.MM.yyyy"
-          className={inputStyles}
-        />
+        <div>
+          <DatePicker
+            selected={formData.date}
+            onChange={handleDateChange}
+            dateFormat="dd.MM.yyyy"
+            disabled={isSubmitting}
+            className={inputStyles}
+          />
+        </div>
 
-        {/* Submit button */}
         <button
           type="submit"
-          className="w-full bg-purple-500 text-white p-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors"
+          disabled={isSubmitting}
+          className={`w-full ${
+            isSubmitting ? 'bg-purple-300 cursor-not-allowed' : 'bg-purple-500 hover:bg-purple-600'
+          } text-white p-3 rounded-lg font-semibold transition-colors`}
         >
-          Add Transaction
+          {isSubmitting ? 'Adding...' : 'Add Transaction'}
         </button>
       </form>
     </div>

@@ -1,3 +1,4 @@
+// src/components/BudgetSummary.js
 import React, { useState, useEffect } from 'react';
 
 function BudgetSummary({ transactions, budget, monthlySavings }) {
